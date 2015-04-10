@@ -32,37 +32,37 @@ use std::thread;
 type ConnectionManager = crust::ConnectionManager<types::DhtId>;
 type Event             = crust::Event<types::DhtId>;
 
-pub struct RoutingClient<'a, F: Facade + 'a> {
-    facade: Arc<Mutex<F>>,
+pub struct RoutingClient<'a> {
+    facade: &'a mut(Facade + 'a),
     maid_id: maidsafe_types::Maid,
     connection_manager: ConnectionManager,
     own_address: types::DhtId,
     bootstrap_address: types::DhtId,
     message_id: u32,
-    join_guard: thread::JoinGuard<'a, ()>,
+    // join_guard: thread::JoinGuard<'a, ()>,
 }
 
-impl<'a, F> Drop for RoutingClient<'a, F> where F: Facade {
-    fn drop(&mut self) {
-        // self.connection_manager.stop(); // TODO This should be coded in ConnectionManager once Peter
-        // implements it.
-    }
-}
+// impl<'a, F> Drop for RoutingClient<'a, F> where F: Facade {
+//     fn drop(&mut self) {
+//         // self.connection_manager.stop(); // TODO This should be coded in ConnectionManager once Peter
+//         // implements it.
+//     }
+// }
 
-impl<'a, F> RoutingClient<'a, F> where F: Facade {
-    pub fn new(my_facade: Arc<Mutex<F>>, maid_id: maidsafe_types::Maid, bootstrap_add: types::DhtId) -> RoutingClient<'a, F> {
+impl<'a> RoutingClient<'a> {
+    pub fn new(my_facade: &'a mut Facade, maid_id: maidsafe_types::Maid, bootstrap_add: types::DhtId) -> RoutingClient<'a> {
         sodiumoxide::init(); // enable shared global (i.e. safe to mutlithread now)
         let (tx, rx): (mpsc::Sender<Event>, mpsc::Receiver<Event>) = mpsc::channel();
         let own_add = types::DhtId(maid_id.get_name().0.to_vec());
 
         RoutingClient {
-            facade: my_facade.clone(),
+            facade: my_facade,
             maid_id: maid_id,
             connection_manager: crust::ConnectionManager::new(own_add.clone(), tx),
             own_address: own_add.clone(),
             bootstrap_address: bootstrap_add.clone(),
             message_id: rand::random::<u32>(),
-            join_guard: thread::scoped(move || RoutingClient::start(rx, bootstrap_add, own_add, my_facade)),
+            // join_guard: ,
         }
     }
 
@@ -158,7 +158,7 @@ impl<'a, F> RoutingClient<'a, F> where F: Facade {
         }
     }
 
-    fn start(rx: mpsc::Receiver<Event>, bootstrap_add: types::DhtId, own_address: types::DhtId, my_facade: Arc<Mutex<F>>) {
+    fn start(&mut self, rx: mpsc::Receiver<Event>, bootstrap_add: types::DhtId, own_address: types::DhtId) {
         for it in rx.iter() {
             match it {
                 crust::connection_manager::Event::NewMessage(id, bytes) => {
@@ -170,8 +170,8 @@ impl<'a, F> RoutingClient<'a, F> where F: Facade {
                        routing_msg.message_header.destination.reply_to.unwrap() == own_address {
                         match routing_msg.message_type {
                             messages::MessageTypeTag::GetDataResponse => {
-                                let mut facade = my_facade.lock().unwrap();
-                                facade.handle_get_response(id, Ok(routing_msg.serialised_body));
+                                // let mut facade = my_facade.lock().unwrap();
+                                self.facade.handle_get_response(id, Ok(routing_msg.serialised_body));
                             }
                             _ => unimplemented!(),
                         }
