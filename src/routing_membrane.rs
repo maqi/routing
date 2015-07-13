@@ -631,7 +631,7 @@ impl<F> RoutingMembrane<F> where F: Interface {
        let mut prune_blockage : Vec<NameType> = Vec::new();
        for (blocked_node, time) in self.connection_cache.iter_mut() {
            // clear block for nodes
-           if time_now - *time > Duration::seconds(10) {
+           if time_now - *time > Duration::seconds(100) {
                prune_blockage.push(blocked_node.clone());
            }
        }
