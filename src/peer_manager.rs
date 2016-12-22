@@ -313,17 +313,11 @@ impl PeerManager {
 
     /// Populates the routing table.
     pub fn populate_routing_table(&mut self, groups: &[Group]) {
-        let min_group_size = self.routing_table.min_group_size();
-        let groups_prefixes = groups.into_iter()
-            .map(|&(ref prefix, _)| *prefix)
-            .collect_vec();
+        let groups_prefixes = groups.into_iter().map(|&(ref prefix, _)| *prefix).collect();
         // TODO - nothing can be done to recover from an error here - use `unwrap!` for now, but
         // consider refactoring to return an error which can be used to transition the state
         // machine to `Terminate`.
-        let new_rt = unwrap!(RoutingTable::new_with_groups(*self.our_public_id.name(),
-                                                           min_group_size,
-                                                           groups_prefixes));
-        self.routing_table = new_rt;
+        unwrap!(self.routing_table.add_prefixes(groups_prefixes));
     }
 
     /// Returns the routing table.
@@ -372,7 +366,7 @@ impl PeerManager {
         Ok(public_ids)
     }
 
-    pub fn verify_candidate(&mut self,
+    pub fn verify_candidate(&self,
                             node_name: XorName,
                             proof: Vec<u8>,
                             _leading_zero_bytes: u32,
@@ -439,7 +433,7 @@ impl PeerManager {
                 self.candidate = None;
                 if let Some(peer) = self.peer_map.get_by_name(&candidate_name) {
                     if let PeerState::ConnectionInfoPreparing(..) = peer.state {
-                        trace!("{:?} received NodeApproval for {:?} but not connected yet",
+                        trace!("{:?} received ApprovalConfirmation for {:?} but not connected yet",
                                self.routing_table.our_name(),
                                candidate_name);
                     } else if let Some(peer_id) = peer.peer_id() {
@@ -452,28 +446,12 @@ impl PeerManager {
                 }
             }
         }
-        trace!("{:?} received ApproalConfirmation for {:?}, but doesn't record it as a candidate \
-                or having its peer info",
+        trace!("{:?} received ApprovalConfirmation for {:?}, but doesn't record it as a \
+                candidate or having its peer info",
                self.routing_table.our_name(),
                candidate_name);
         // TODO: more specific return error
         Err(RoutingError::InvalidStateForOperation)
-    }
-
-    /// Returns peers in `Candidate` state
-    pub fn peer_candidates(&mut self) -> Vec<(PublicId, PeerId)> {
-        self.peer_map
-            .peers()
-            .filter(|peer| match peer.state {
-                PeerState::Candidate(_) => true,
-                _ => false,
-            })
-            .filter_map(|peer| if let Some(peer_id) = peer.peer_id {
-                Some((*peer.pub_id(), peer_id))
-            } else {
-                None
-            })
-            .collect_vec()
     }
 
     /// Update peer's state to `Candidate` if it is a node candidate
@@ -505,21 +483,6 @@ impl PeerManager {
             }
         }
         Ok(None)
-    }
-
-    /// Update peer's state to `Candidate`
-    pub fn add_as_peer_candidate(&mut self, pub_id: &PublicId, peer_id: &PeerId) {
-        let tunnel = match self.peer_map.remove(peer_id).map(|peer| peer.state) {
-            Some(PeerState::SearchingForTunnel) |
-            Some(PeerState::AwaitingNodeIdentify(true)) => true,
-            Some(PeerState::Routing(tunnel)) => {
-                error!("PeerCandidate {:?} already in state Routing.", peer_id);
-                tunnel
-            }
-            _ => false,
-        };
-        let state = PeerState::Candidate(tunnel);
-        let _ = self.peer_map.insert(Peer::new(*pub_id, Some(*peer_id), state));
     }
 
     /// Wraps the routing table function of the same name and maps `XorName`s to `PublicId`s.

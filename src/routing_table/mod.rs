@@ -260,35 +260,18 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    /// Creates a new `RoutingTable`, using an existing collection of groups.
-    pub fn new_with_groups(our_name: T,
-                           min_section_size: usize,
-                           prefixes: Vec<Prefix<T>>)
-                           -> Result<Self, Error> {
-        let mut our_prefix = Default::default();
-        let mut our_section = HashSet::new();
-        our_section.insert(our_name);
-        let groups = prefixes.into_iter()
-            .filter_map(|prefix| {
-                if prefix.matches(&our_name) {
-                    our_prefix = prefix;
-                    None
-                } else {
-                    Some((prefix, HashSet::new()))
-                }
-            })
-            .collect();
-        let result = RoutingTable {
-            our_name: our_name,
-            min_group_size: min_section_size,
-            our_prefix: our_prefix,
-            our_section: our_section,
-            groups: groups,
-            we_want_to_merge: false,
-            they_want_to_merge: false,
-        };
-        result.check_invariant()?;
-        Ok(result)
+    /// Adds the list of `Prefix`es as empty sections.
+    ///
+    /// Called once a node has been approved by its own section and is given its peers' tables.
+    pub fn add_prefixes(&mut self, prefixes: Vec<Prefix<T>>) -> Result<(), Error> {
+        for prefix in prefixes {
+            if prefix.matches(&self.our_name) {
+                self.our_prefix = prefix;
+            } else {
+                let _ = self.groups.insert(prefix, HashSet::new());
+            }
+        }
+        self.check_invariant()
     }
 
     /// Returns the `Prefix` of our group
