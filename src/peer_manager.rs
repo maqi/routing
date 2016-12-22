@@ -417,7 +417,7 @@ impl PeerManager {
             if *name == candidate_name {
                 *approved = validity;
                 if let Some(peer) = self.peer_map.get_by_name(&candidate_name) {
-                    if let PeerState::ConnectionInfoPreparing(..) = peer.state {
+                    if let PeerState::ConnectionInfoPreparing { .. } = peer.state {
                         trace!("{:?} received NodeApproval for {:?} but not connected yet",
                                self.routing_table.our_name(),
                                candidate_name);
@@ -451,7 +451,7 @@ impl PeerManager {
             if name == candidate_name && approved {
                 self.candidate = None;
                 if let Some(peer) = self.peer_map.get_by_name(&candidate_name) {
-                    if let PeerState::ConnectionInfoPreparing(..) = peer.state {
+                    if let PeerState::ConnectionInfoPreparing { .. } = peer.state {
                         trace!("{:?} received ApprovalConfirmation for {:?} but not connected yet",
                                self.routing_table.our_name(),
                                candidate_name);
