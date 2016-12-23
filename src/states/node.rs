@@ -118,7 +118,7 @@ impl Node {
                   timer)
     }
 
-    #[cfg_attr(feature = "clippy", allow(too_many_arguments))]
+    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     pub fn from_bootstrapping(cache: Box<Cache>,
                               crust_service: Service,
                               event_sender: Sender<Event>,
@@ -145,7 +145,7 @@ impl Node {
         node
     }
 
-    #[cfg_attr(feature = "clippy", allow(too_many_arguments))]
+    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     fn new(cache: Box<Cache>,
            crust_service: Service,
            event_sender: Sender<Event>,
