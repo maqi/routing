@@ -78,6 +78,7 @@ pub struct Node {
     full_id: FullId,
     get_node_name_timer_token: Option<u64>,
     is_first_node: bool,
+    is_approved: bool,
     /// The queue of routing messages addressed to us. These do not themselves need
     /// forwarding, although they may wrap a message which needs forwarding.
     msg_queue: VecDeque<RoutingMessage>,
@@ -117,7 +118,7 @@ impl Node {
                   timer)
     }
 
-    #[cfg_attr(feature = "clippy", allow(too_many_arguments))]
+    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     pub fn from_bootstrapping(cache: Box<Cache>,
                               crust_service: Service,
                               event_sender: Sender<Event>,
@@ -144,7 +145,7 @@ impl Node {
         node
     }
 
-    #[cfg_attr(feature = "clippy", allow(too_many_arguments))]
+    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     fn new(cache: Box<Cache>,
            crust_service: Service,
            event_sender: Sender<Event>,
@@ -168,6 +169,7 @@ impl Node {
             full_id: full_id,
             get_node_name_timer_token: None,
             is_first_node: first_node,
+            is_approved: first_node,
             msg_queue: VecDeque::new(),
             peer_mgr: PeerManager::new(min_group_size, public_id),
             response_cache: cache,
@@ -592,7 +594,7 @@ impl Node {
         for peer_id in peers {
             let msg = DirectMessage::SectionListSignature(prefix, section.clone(), sig);
             if let Err(e) = self.send_direct_message(&peer_id, msg) {
-                error!("{:?} Error sending section list signature for {:?} to {:?}: {:?}",
+                warn!("{:?} Error sending section list signature for {:?} to {:?}: {:?}",
                        self,
                        prefix,
                        peer_id,
@@ -836,23 +838,22 @@ impl Node {
     }
 
     fn handle_node_approval(&mut self, groups: Vec<(Prefix<XorName>, Vec<PublicId>)>) {
-        if !self.peer_mgr.routing_table().is_empty() {
+        if self.is_approved {
             warn!("{:?} Received duplicate NodeApproval.", self);
             return;
         }
-
-        let result = self.peer_mgr.peer_candidates();
         self.peer_mgr.populate_routing_table(&groups);
-        for peer_info in &result {
-            self.add_to_routing_table(&peer_info.0, &peer_info.1);
-        }
 
         let name = *self.name();
-        let _ = self.send_routing_message(RoutingMessage {
+        if let Err(error) = self.send_routing_message(RoutingMessage {
             src: Authority::ManagedNode(name),
             dst: Authority::Section(name),
             content: MessageContent::ApprovalConfirmation,
-        });
+        }) {
+            debug!("{:?} Failed sending ApprovalConfirmation: {:?}", self, error);
+        };
+
+        info!("{:?} received {:?} on NodeApproval.", self, groups);
 
         for group in &groups {
             for pub_id in &group.1 {
@@ -871,6 +872,12 @@ impl Node {
                 }
             }
         }
+
+        self.send_event(Event::Connected);
+        for name in self.peer_mgr.routing_table().iter() {
+            self.send_event(Event::NodeAdded(*name, self.peer_mgr.routing_table().clone()));
+        }
+        self.is_approved = true;
     }
 
     fn handle_resource_proof_request(&mut self,
@@ -907,7 +914,9 @@ impl Node {
             info!("{:?} Sending CandidateApproval {:?} to group.",
                   self,
                   valid_candidate);
-            let _ = self.send_routing_message(response_msg);
+            if let Err(error) = self.send_routing_message(response_msg) {
+                debug!("{:?} Failed sending CandidateApproval: {:?}", self, error);
+            }
         }
     }
 
@@ -1075,11 +1084,6 @@ impl Node {
 
     fn handle_node_identify(&mut self, public_id: PublicId, peer_id: PeerId) {
         debug!("{:?} Handling NodeIdentify from {:?}.", self, public_id.name());
-        if !self.is_first_node && self.peer_mgr.routing_table().is_empty() {
-            debug!("{:?} adding {:?} as peer candidate.", self, public_id.name());
-            self.peer_mgr.add_as_peer_candidate(&public_id, &peer_id);
-            return;
-        }
         match self.peer_mgr.check_candidate(&public_id, &peer_id) {
             Ok(Some((tunnel, seed))) => {
                 if tunnel {
@@ -1149,13 +1153,12 @@ impl Node {
         }
 
         debug!("{:?} Added {:?} to routing table.", self, public_id.name());
-        if self.peer_mgr.routing_table().len() == 1 {
+        if self.is_first_node && self.peer_mgr.routing_table().len() == 1 {
             self.send_event(Event::Connected);
         }
-
-        let event = Event::NodeAdded(*public_id.name(), self.peer_mgr.routing_table().clone());
-        if let Err(err) = self.event_sender.send(event) {
-            error!("{:?} Error sending event to routing user - {:?}", self, err);
+        if self.is_approved {
+            self.send_event(Event::NodeAdded(*public_id.name(),
+                                             self.peer_mgr.routing_table().clone()));
         }
 
         if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
@@ -1686,9 +1689,7 @@ impl Node {
         // user about them.
         let (peers_to_drop, our_new_prefix) = self.peer_mgr.split_group(prefix);
         if let Some(new_prefix) = our_new_prefix {
-            if let Err(err) = self.event_sender.send(Event::GroupSplit(new_prefix)) {
-                error!("{:?} Error sending event to routing user - {:?}", self, err);
-            }
+            self.send_event(Event::GroupSplit(new_prefix));
         }
 
         for (name, peer_id) in peers_to_drop {
@@ -1721,13 +1722,21 @@ impl Node {
             OwnMergeState::AlreadyMerged => (),
             OwnMergeState::Completed { targets, merge_details } => {
                 // TODO - the event should maybe only fire once all new connections have been made?
-                if let Err(err) = self.event_sender.send(Event::GroupMerge(merge_details.prefix)) {
-                    error!("{:?} Error sending event to routing user - {:?}", self, err);
-                }
+                self.send_event(Event::GroupMerge(merge_details.prefix));
                 trace!("{:?} Merge completed. Prefixes: {:?}",
                        self,
                        self.peer_mgr.routing_table().prefixes());
                 self.merge_if_necessary();
+                // after the merge, half of our section won't have our signatures for the
+                // neighbouring sections - send them
+                for prefix in self.peer_mgr.routing_table().other_prefixes() {
+                    if let Err(e) = self.send_section_list_signature(prefix, None) {
+                        warn!("{:?} Error sending section list signature for prefix {:?}: {:?}",
+                              self,
+                              prefix,
+                              e);
+                    }
+                }
                 let src = Authority::Section(self.peer_mgr
                     .routing_table()
                     .our_prefix()
@@ -1791,7 +1800,7 @@ impl Node {
         }
 
         if self.tick_timer_token == token {
-            let _ = self.event_sender.send(Event::Tick);
+            self.send_event(Event::Tick);
             let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
             self.tick_timer_token = self.timer.schedule(tick_period);
 
@@ -2145,11 +2154,7 @@ impl Node {
               self,
               details.name);
 
-        let event = Event::NodeLost(details.name, self.peer_mgr.routing_table().clone());
-        if let Err(err) = self.event_sender.send(event) {
-            error!("{:?} Error sending event to routing user - {:?}", self, err);
-        }
-
+        self.send_event(Event::NodeLost(details.name, self.peer_mgr.routing_table().clone()));
         self.merge_if_necessary();
 
         if !details.was_in_our_group {
@@ -2325,7 +2330,9 @@ impl Base for Node {
     }
 
     fn send_event(&self, event: Event) {
-        let _ = self.event_sender.send(event);
+        if let Err(error) = self.event_sender.send(event) {
+            debug!("{:?} Error sending event to routing user - {:?}", self, error);
+        }
     }
 
     fn stats(&mut self) -> &mut Stats {

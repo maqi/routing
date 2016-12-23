@@ -129,7 +129,6 @@ use std::collections::{BTreeSet, HashMap, HashSet, hash_map, hash_set};
 use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
 use std::hash::Hash;
-use std::thread;
 
 pub type Groups<T> = HashMap<Prefix<T>, HashSet<T>>;
 
@@ -151,7 +150,7 @@ pub struct Iter<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> {
 impl<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> Iterator for Iter<'a, T> {
     type Item = &'a T;
 
-    #[cfg_attr(feature="clippy", allow(while_let_on_iterator))]
+    #[cfg_attr(feature="cargo-clippy", allow(while_let_on_iterator))]
     fn next(&mut self) -> Option<&'a T> {
         while let Some(name) = self.inner.next() {
             if *name != self.our_name {
@@ -260,35 +259,18 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    /// Creates a new `RoutingTable`, using an existing collection of groups.
-    pub fn new_with_groups(our_name: T,
-                           min_section_size: usize,
-                           prefixes: Vec<Prefix<T>>)
-                           -> Result<Self, Error> {
-        let mut our_prefix = Default::default();
-        let mut our_section = HashSet::new();
-        our_section.insert(our_name);
-        let groups = prefixes.into_iter()
-            .filter_map(|prefix| {
-                if prefix.matches(&our_name) {
-                    our_prefix = prefix;
-                    None
-                } else {
-                    Some((prefix, HashSet::new()))
-                }
-            })
-            .collect();
-        let result = RoutingTable {
-            our_name: our_name,
-            min_group_size: min_section_size,
-            our_prefix: our_prefix,
-            our_section: our_section,
-            groups: groups,
-            we_want_to_merge: false,
-            they_want_to_merge: false,
-        };
-        result.check_invariant()?;
-        Ok(result)
+    /// Adds the list of `Prefix`es as empty sections.
+    ///
+    /// Called once a node has been approved by its own section and is given its peers' tables.
+    pub fn add_prefixes(&mut self, prefixes: Vec<Prefix<T>>) -> Result<(), Error> {
+        for prefix in prefixes {
+            if prefix.matches(&self.our_name) {
+                self.our_prefix = prefix;
+            } else {
+                let _ = self.groups.insert(prefix, HashSet::new());
+            }
+        }
+        self.check_invariant(true)
     }
 
     /// Returns the `Prefix` of our group
@@ -900,7 +882,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Ok(*RoutingTable::get_routeth_name(names, &target, route))
     }
 
-    fn check_invariant(&self) -> Result<(), Error> {
+    fn check_invariant(&self, allow_empty_groups: bool) -> Result<(), Error> {
         if !self.our_prefix.matches(&self.our_name) {
             warn!("Our prefix does not match our name: {:?}", self);
             return Err(Error::InvariantViolation);
@@ -927,6 +909,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
         for (prefix, group) in &self.groups {
             if has_enough_nodes && group.len() < self.min_group_size {
+                if group.is_empty() && allow_empty_groups {
+                    continue;
+                }
                 warn!("Minimum group size not met for group {:?}: {:?}",
                       prefix,
                       self);
@@ -965,7 +950,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Runs the built-in invariant checker
     #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn verify_invariant(&self) {
-        unwrap!(self.check_invariant(),
+        unwrap!(self.check_invariant(false),
                 "Invariant not satisfied for RT: {:?}",
                 self);
     }
@@ -1028,14 +1013,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Debug for Rout
     }
 }
 
-impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Drop for RoutingTable<T> {
-    fn drop(&mut self) {
-        if thread::panicking() {
-            trace!("{:?}", self);
-        }
-    }
-}
-
 
 #[cfg(test)]
 mod tests {
@@ -1056,12 +1033,12 @@ mod tests {
     // add() and split() through set-up of random groups with invariant.
     #[test]
     fn test_routing_groups() {
-        // Use replicable random numbers to initialse a table:
+        // Use replicable random numbers to initialise a table:
         use rand::{Rng, SeedableRng, XorShiftRng};
         let mut rng: XorShiftRng = SeedableRng::from_seed([1315, 30, 61894, 315]);
         let our_name = rng.next_u32();
         let mut table = RoutingTable::new(our_name, 8);
-        unwrap!(table.check_invariant());
+        table.verify_invariant();
         let mut unknown_distant_name = None;
 
         for _ in 0..1000 {
@@ -1069,12 +1046,12 @@ mod tests {
             // Try to add new_name. We double-check the output to test this too.
             match table.add(new_name) {
                 Err(Error::AlreadyExists) => {
-                    unwrap!(table.check_invariant());
+                    table.verify_invariant();
                     assert!(table.iter().any(|u| *u == new_name));
                     // skip
                 }
                 Err(Error::PeerNameUnsuitable) => {
-                    unwrap!(table.check_invariant());
+                    table.verify_invariant();
                     assert!(table.groups.keys().all(|p| !p.matches(&new_name)));
                     // We should get a few of these. Save one for tests, but otherwise ignore.
                     unknown_distant_name = Some(new_name);
@@ -1083,14 +1060,14 @@ mod tests {
                     panic!("unexpected error: {}", e);
                 }
                 Ok(true) => {
-                    unwrap!(table.check_invariant());
+                    table.verify_invariant();
                     let our_prefix = *table.our_prefix();
                     assert!(our_prefix.matches(&new_name));
                     let _ = table.split(our_prefix);
-                    unwrap!(table.check_invariant());
+                    table.verify_invariant();
                 }
                 Ok(false) => {
-                    unwrap!(table.check_invariant());
+                    table.verify_invariant();
                     assert!(table.iter().any(|u| *u == new_name));
                     if table.is_in_our_group(&new_name) {
                         continue;   // add() already checked for necessary split
@@ -1112,7 +1089,7 @@ mod tests {
                     if new_group_size >= min_group_size &&
                        group_len - new_group_size >= min_group_size {
                         let _ = table.split(group_prefix);  // do the split
-                        unwrap!(table.check_invariant());
+                        table.verify_invariant();
                     }
                 }
             }
