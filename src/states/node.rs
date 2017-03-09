@@ -483,13 +483,23 @@ impl Node {
                     self.send_or_drop(&dst, bytes, content.priority());
                     Ok(())
                 } else if self.tunnels.accept_clients(src, dst) {
-                    debug!("{:?} agreed to act as tunnel_node for {:?} - {:?}",
-                           self,
-                           src,
-                           dst);
-                    self.send_direct_message(dst, DirectMessage::TunnelSuccess(src));
-                    self.send_or_drop(&dst, bytes, content.priority());
-                    Ok(())
+                    if self.peer_mgr.can_tunnel_for(&src, &dst) {
+                        debug!("{:?} agreed to act as tunnel_node for {:?} - {:?}",
+                               self,
+                               src,
+                               dst);
+                        self.send_direct_message(dst, DirectMessage::TunnelSuccess(src));
+                        self.send_or_drop(&dst, bytes, content.priority());
+                        Ok(())
+                    } else {
+                        debug!("{:?} mistakenly accepted to act as tunnel_node for {:?} - {:?}",
+                               self,
+                               src,
+                               dst);
+                        self.tunnels.drop_client_pair(src, dst);
+                        self.send_direct_message(src, DirectMessage::TunnelClosed(dst));
+                        Err(RoutingError::InvalidDestination)
+                    }
                 } else {
                     debug!("{:?} Invalid TunnelDirect message received via {:?}: {:?} -> {:?} \
                             {:?}",
@@ -2917,13 +2927,13 @@ impl Node {
                 self.peer_mgr.get_routing_peer(&dst_id).map(|dst_pub_id| (dst_id, *dst_pub_id))
             })
             .collect_vec();
-        for (dst_id, pub_id) in peers {
-            self.dropped_peer(&dst_id, outbox, false);
-            debug!("{:?} Lost tunnel for peer {:?} ({:?}). Requesting new tunnel.",
-                   self,
-                   dst_id,
-                   pub_id.name());
-            self.find_tunnel_for_peer(dst_id, &pub_id);
+        for (dst_id, _pub_id) in peers {
+            self.dropped_peer(&dst_id, outbox, true);
+            // debug!("{:?} Lost tunnel for peer {:?} ({:?}). Requesting new tunnel.",
+            //        self,
+            //        dst_id,
+            //        pub_id.name());
+            // self.find_tunnel_for_peer(dst_id, &pub_id);
         }
     }
 
