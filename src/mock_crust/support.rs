@@ -48,6 +48,7 @@ impl Network {
         } else {
             SeededRng::new()
         };
+println!("seed: {:?}", rng);
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         Network(Rc::new(RefCell::new(NetworkImpl {
             services: HashMap::new(),

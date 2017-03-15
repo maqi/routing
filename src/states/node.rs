@@ -455,7 +455,9 @@ impl Node {
     }
 
     fn find_tunnel_for_peer(&mut self, peer_id: PeerId, pub_id: &PublicId) {
-        for (name, dst_peer_id) in self.peer_mgr.set_searching_for_tunnel(peer_id, *pub_id) {
+        let potential_tunnel_nodes = self.peer_mgr.set_searching_for_tunnel(peer_id, *pub_id);
+        // rand::thread_rng().shuffle(&mut potential_tunnel_nodes);
+        for (name, dst_peer_id) in potential_tunnel_nodes {
             trace!("{:?} Asking {:?} to serve as a tunnel for {:?}.",
                    self,
                    name,
@@ -1724,6 +1726,10 @@ impl Node {
 
     /// Handle a `TunnelSuccess` response from `peer_id`: It will act as a tunnel to `dst_id`.
     fn handle_tunnel_success(&mut self, peer_id: PeerId, dst_id: PeerId) {
+        debug!("{:?} Received TunnelSuccess from {:?} for peer {:?}",
+               self,
+               peer_id,
+               dst_id);
         if !self.peer_mgr.tunnelling_to(&dst_id) {
             debug!("{:?} Received TunnelSuccess from {:?} for an already connected peer {:?}",
                    self,

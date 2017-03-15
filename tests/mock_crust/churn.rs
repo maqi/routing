@@ -386,36 +386,47 @@ fn verify_section_list_signatures(nodes: &[TestNode]) {
 
 #[test]
 fn aggressive_churn() {
+unwrap!(::maidsafe_utilities::log::init(false));
     let min_section_size = 5;
-    let mut network = Network::new(min_section_size, None);
+    let mut network = Network::new(min_section_size, Some([2757929934, 2353660648, 2205023063, 988304948]));
+    // let mut network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
 
     // Create an initial network, increase until we have several sections, then
     // decrease back to min_section_size, then increase to again.
     let mut nodes = create_connected_nodes(&network, min_section_size);
 
-    info!("Churn [{} nodes, {} sections]: adding nodes",
+    println!("Churn [{} nodes, {} sections]: adding nodes",
           nodes.len(),
           count_sections(&nodes));
     while count_sections(&nodes) <= 5 || nodes.len() < 50 {
         if nodes.len() > (2 * min_section_size) {
             let peer_1 = rng.gen_range(0, nodes.len());
             let peer_2 = gen_range_except(&mut rng, 0, nodes.len(), Some(peer_1));
-            info!("lost connection between {:?} and {:?}",
+            println!("lost connection between {:?} and {:?}",
                   nodes[peer_1].name(),
                   nodes[peer_2].name());
             network.lost_connection(nodes[peer_1].handle.endpoint(),
                                     nodes[peer_2].handle.endpoint());
         }
-        let (added_index, _) = add_random_node(&mut rng, &network, &mut nodes, min_section_size);
+        let (added_index, proxy_index) =
+            add_random_node(&mut rng, &network, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
-        info!("added {:?}", nodes[added_index].name());
+
+        if nodes[added_index].inner.try_next_ev().is_err() {
+println!("!!!!!!!!!!! failed in joining network restarting !!!!!!!!!!!!!!!!!");
+            let config = Config::with_contacts(&[nodes[proxy_index].handle.endpoint()]);
+            nodes[added_index] = TestNode::builder(&network).config(config).create();
+            poll_and_resend(&mut nodes, &mut []);
+        }
+
+        println!("added {:?}", nodes[added_index].name());
         verify_invariant_for_all_nodes(&nodes);
         verify_section_list_signatures(&nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
     }
 
-    info!("Churn [{} nodes, {} sections]: simultaneous adding and dropping nodes",
+    println!("Churn [{} nodes, {} sections]: simultaneous adding and dropping nodes",
           nodes.len(),
           count_sections(&nodes));
     while nodes.len() > 25 {
@@ -423,14 +434,16 @@ fn aggressive_churn() {
         let (added_index, proxy_index) =
             add_random_node(&mut rng, &network, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
-        info!("simultaneous added {:?}", nodes[added_index].name());
         // An candidate could be blocked if it connected to a pre-merge minority section.
         // In that case, a restart of candidate shall be carried out.
         if nodes[added_index].inner.try_next_ev().is_err() {
+
+println!("!!!!!!!!!!! failed in joining network restarting simultaneous !!!!!!!!!!!!!!!!!");
             let config = Config::with_contacts(&[nodes[proxy_index].handle.endpoint()]);
             nodes[added_index] = TestNode::builder(&network).config(config).create();
             poll_and_resend(&mut nodes, &mut []);
         }
+        println!("simultaneous added {:?}", nodes[added_index].name());
 
         verify_invariant_for_all_nodes(&nodes);
         verify_section_list_signatures(&nodes);
@@ -439,11 +452,11 @@ fn aggressive_churn() {
         client_gets(&mut network, &mut nodes, min_section_size);
     }
 
-    info!("Churn [{} nodes, {} sections]: dropping nodes",
+    println!("Churn [{} nodes, {} sections]: dropping nodes",
           nodes.len(),
           count_sections(&nodes));
     while nodes.len() > min_section_size {
-        info!("dropping ------ {}", nodes.len());
+        println!("dropping ------ {}", nodes.len());
         drop_random_nodes(&mut rng, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
         verify_invariant_for_all_nodes(&nodes);
@@ -452,7 +465,7 @@ fn aggressive_churn() {
         client_gets(&mut network, &mut nodes, min_section_size);
     }
 
-    info!("Churn [{} nodes, {} sections]: done",
+    println!("Churn [{} nodes, {} sections]: done",
           nodes.len(),
           count_sections(&nodes));
 }
