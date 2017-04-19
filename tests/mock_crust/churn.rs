@@ -22,7 +22,7 @@ use rand::Rng;
 use routing::{Authority, DataIdentifier, Event, EventStream, MessageId, QUORUM, Request, XorName};
 use routing::mock_crust::{Config, Network};
 use std::cmp;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::iter;
 
 // Randomly removes some nodes.
@@ -130,15 +130,39 @@ fn add_node_and_poll<R: Rng>(rng: &mut R,
 fn random_churn<R: Rng>(rng: &mut R,
                         network: &Network,
                         nodes: &mut Vec<TestNode>)
-                        -> Option<usize> {
+                        -> (Option<usize>, usize) {
     let len = nodes.len();
 
     if count_sections(nodes) > 1 && rng.gen_weighted_bool(3) {
-        let _ = nodes.remove(gen_range(rng, 1, len));
-        let _ = nodes.remove(gen_range(rng, 1, len - 1));
-        let _ = nodes.remove(gen_range(rng, 1, len - 2));
+        let mut affected_tunnels = 0;
+        for i in 0..3 {
+            let node = nodes.remove(gen_range(rng, 1, len - i));
+            affected_tunnels += node.client_count();
+            drop(node)
+        }
 
-        None
+        // min tunnels      unexpected_receivers for a grouop message
+        //      2                           1
+        //      4                           2
+        //      9                           3
+        let unexpected_receivers = if affected_tunnels < 2 {
+            0
+        } else {
+            affected_tunnels -= 2;
+            let mut unexpected_receivers = 1;
+            let mut iterations = 0;
+            loop {
+                let distance = ((2 + 2 + iterations) * (iterations + 1)) / 2;
+                if affected_tunnels < distance {
+                    break;
+                }
+                affected_tunnels -= distance;
+                unexpected_receivers += 1;
+                iterations += 1;
+            }
+            unexpected_receivers
+        };
+        (None, cmp::min(unexpected_receivers, (network.min_section_size() - 1) / 2))
     } else {
         let mut proxy = gen_range(rng, 0, len);
         let index = gen_range(rng, 1, len + 1);
@@ -173,7 +197,7 @@ fn random_churn<R: Rng>(rng: &mut R,
                                      nodes[index].handle.endpoint());
         }
 
-        Some(index)
+        (Some(index), 1)
     }
 }
 
@@ -187,9 +211,19 @@ struct ExpectedGets {
     messages: HashSet<GetKey>,
     /// The section or section members of receiving groups or sections, at the time of sending.
     sections: HashMap<Authority<XorName>, HashSet<XorName>>,
+    /// The max unexpected_receivers allowed for a group message.
+    unexpected_receivers: usize,
 }
 
 impl ExpectedGets {
+    fn new(unexpected_receivers: usize) -> Self {
+        ExpectedGets {
+            messages: Default::default(),
+            sections: Default::default(),
+            unexpected_receivers: unexpected_receivers,
+        }
+    }
+
     /// Sends a request using the nodes specified by `src`, and adds the expectation. Panics if not
     /// enough nodes sent a section message, or if an individual sending node could not be found.
     fn send_and_expect(&mut self,
@@ -258,7 +292,7 @@ impl ExpectedGets {
             })
             .collect();
         let mut section_msgs_received = HashMap::new(); // The count of received section messages.
-        let mut unexpected_receive = BTreeSet::new();
+        let mut unexpected_receive = BTreeMap::new();
         for node in nodes {
             while let Ok(event) = node.try_next_ev() {
                 if let Event::Request {
@@ -272,13 +306,17 @@ impl ExpectedGets {
                                 .get(&key.3)
                                 .map_or(false, |entry| entry.contains(&node.name())) {
                             // Unexpected receive shall only happen for group (only used NaeManager
-                            // in this test), and shall have at most one for each message.
+                            // in this test)
                             if let Authority::NaeManager(_) = dst {
-                                assert!(unexpected_receive.insert(msg_id),
-                                        "Unexpected request for node {}: {:?} / {:?}",
-                                        node.name(),
-                                        key,
-                                        self.sections);
+                                let entry =
+                                    unexpected_receive.entry(msg_id).or_insert_with(Vec::new);
+                                entry.push(node.name());
+                                if entry.len() > self.unexpected_receivers {
+                                    panic!("Unexpected request for nodes {:?}: {:?} / {:?}",
+                                           entry,
+                                           key,
+                                           self.sections);
+                                }
                             } else {
                                 panic!("Unexpected request for node {}: {:?} / {:?}",
                                        node.name(),
@@ -525,7 +563,7 @@ fn messages_during_churn() {
 
     for i in 0..100 {
         trace!("Iteration {}", i);
-        let added_index = random_churn(&mut rng, &network, &mut nodes);
+        let (added_index, unexpected_receivers) = random_churn(&mut rng, &network, &mut nodes);
 
         // Create random data ID and pick random sending and receiving nodes.
         let data_id = DataIdentifier::Immutable(rng.gen());
@@ -541,7 +579,7 @@ fn messages_during_churn() {
         // this makes sure we have two different sections if there exists more than one
         // let auth_s1 = Authority::Section(!section_name);
 
-        let mut expected_gets = ExpectedGets::default();
+        let mut expected_gets = ExpectedGets::new(unexpected_receivers);
 
         // Test messages from a node to itself, another node, a group and a section...
         expected_gets.send_and_expect(data_id, auth_n0, auth_n0, &mut nodes, min_section_size);

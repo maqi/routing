@@ -488,6 +488,11 @@ impl Node {
             .has_tunnel_clients(client_1, client_2)
     }
 
+    /// Returns the number of client pairs this node is acting as a tunnel for.
+    pub fn client_count(&self) -> usize {
+        self.machine.current().client_count()
+    }
+
     /// Resend all unacknowledged messages.
     pub fn clear_state(&mut self) {
         self.machine.current_mut().clear_state();

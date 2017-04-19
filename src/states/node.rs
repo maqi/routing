@@ -3248,6 +3248,11 @@ impl Node {
         let _ = self.purge_invalid_rt_entries(&mut EventBuf::new());
     }
 
+    /// Returns the number of client pairs this node is acting as a tunnel for.
+    pub fn client_count(&self) -> usize {
+        self.tunnels.client_count()
+    }
+
     pub fn clear_state(&mut self) {
         self.ack_mgr.clear();
         self.routing_msg_filter.clear();

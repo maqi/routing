@@ -165,6 +165,13 @@ impl State {
         }
     }
 
+    pub fn client_count(&self) -> usize {
+        match *self {
+            State::Node(ref state) => state.client_count(),
+            _ => 0,
+        }
+    }
+
     pub fn clear_state(&mut self) {
         match *self {
             State::Node(ref mut state) => state.clear_state(),

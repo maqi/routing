@@ -163,6 +163,10 @@ impl TestNode {
             .ok()
             .map_or(false, |rt| rt.in_authority(dst))
     }
+
+    pub fn client_count(&self) -> usize {
+        self.inner.client_count()
+    }
 }
 
 pub struct TestNodeBuilder<'a> {
