@@ -15,11 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use ack_manager::ACK_TIMEOUT_SECS;
 use data::{MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_SIZE_IN_BYTES};
 use error::RoutingError;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
 use itertools::Itertools;
+use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{self, SerialisationError};
 use messages::{MAX_PART_LEN, UserMessage};
 use sha3::Digest256;
@@ -27,6 +29,7 @@ use std::cmp;
 use std::collections::BTreeMap;
 use std::mem;
 use std::net::IpAddr;
+use std::time::Duration;
 #[cfg(not(feature = "use-mock-crust"))]
 use std::time::Instant;
 use types::MessageId;
@@ -55,13 +58,12 @@ pub mod rate_limiter_consts {
 /// Used to throttle the rate at which clients can send messages via this node. It works on a "leaky
 /// bucket" principle: there is a set rate at which bytes will leak out of the bucket, there is a
 /// maximum capacity for the bucket, and connected clients each get an equal share of this capacity.
-#[derive(Debug)]
 pub struct RateLimiter {
     /// Map of client IP address to their total bytes remaining in the `RateLimiter`.
     used: BTreeMap<IpAddr, u64>,
     /// Initial charge amount by GET request message ID.
     /// The IP address of the requesting peer is also tracked so that stale entries can be removed.
-    overcharged: BTreeMap<MessageId, (u64, IpAddr)>,
+    overcharged: LruCache<MessageId, u64>,
     /// Timestamp of when the `RateLimiter` was last updated.
     last_updated: Instant,
     /// Whether rate restriction is disabled.
@@ -72,7 +74,7 @@ impl RateLimiter {
     pub fn new(disabled: bool) -> Self {
         RateLimiter {
             used: BTreeMap::new(),
-            overcharged: BTreeMap::new(),
+            overcharged: LruCache::with_expiry_duration(Duration::from_secs(ACK_TIMEOUT_SECS)),
             last_updated: Instant::now(),
             disabled: disabled,
         }
@@ -158,9 +160,7 @@ impl RateLimiter {
             // If an entry already exists, we leave it as is. This means that
             // *at most 1* refund is applied if multiple messages are sent with
             // the same `msg_id`.
-            let _ = self.overcharged.entry(*msg_id).or_insert(
-                (bytes_to_add, *client_ip),
-            );
+            let _ = self.overcharged.entry(*msg_id).or_insert(bytes_to_add);
         }
 
         let _ = self.used.insert(*client_ip, new_balance);
@@ -175,16 +175,6 @@ impl RateLimiter {
             self.used.len() + 1
         };
         cmp::max(MIN_CLIENT_CAPACITY, SOFT_CAPACITY / num_clients as u64)
-    }
-
-    /// Clear out stale entries from `overcharged` when the given IP address's bucket is empty.
-    fn purge_overcharged(&mut self, client_ip: IpAddr) {
-        let overcharged = mem::replace(&mut self.overcharged, BTreeMap::new());
-        for (msg_id, (charge, ip)) in overcharged {
-            if ip != client_ip {
-                let _ = self.overcharged.insert(msg_id, (charge, ip));
-            }
-        }
     }
 
     /// Update a client's balance to compensate for initial over-counting.
@@ -244,7 +234,7 @@ impl RateLimiter {
         }
 
         let amount_charged = match self.overcharged.remove(msg_id) {
-            Some((amount, _)) => amount,
+            Some(amount) => amount,
             None => return None,
         };
 
@@ -283,8 +273,6 @@ impl RateLimiter {
             leaked_units -= quota;
             if used > quota {
                 let _ = self.used.insert(client, used - quota);
-            } else {
-                self.purge_overcharged(client);
             }
         }
     }
