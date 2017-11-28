@@ -492,17 +492,23 @@ mod tests {
     use rust_sodium;
     use rust_sodium::crypto::sign;
 
+    const GROUP_SIZE: usize = 8;
+    const ELDER_DEFAULT_AGE: u8 = 5;
+
     #[test]
-    fn validate() {
+    fn add_vote() {
         let mut rng = SeededRng::thread_rng();
         unwrap!(rust_sodium::init_with_rng(&mut rng));
 
-        let keys = sign::gen_keypair();
-        let peer_id = PeerId::new(5, keys.0);
-        let payload = Elders::ElderAccept(peer_id.clone());
-        let vote = Vote::new(&keys.1, payload).unwrap();
+        let payload = Elders::ElderAccept(PeerId::new(ELDER_DEFAULT_AGE, sign::gen_keypair().0));
 
         let mut chain = DataChain::default();
-        assert!(chain.add_vote(vote, &peer_id).is_some());
+        for _ in 0..GROUP_SIZE {
+            let keys = sign::gen_keypair();
+            let vote = Vote::new(&keys.1, payload.clone()).unwrap();
+            let peer_id = PeerId::new(ELDER_DEFAULT_AGE, keys.0);
+            assert!(chain.add_vote(vote, &peer_id).is_some());
+        }
+        assert_eq!(chain.blocks[0].num_proofs(), GROUP_SIZE);
     }
 }
