@@ -22,11 +22,13 @@ use maidsafe_utilities::serialisation;
 use network_event::{AdultsAndInfants, DataIdentifier, Elders};
 use peer_id::PeerId;
 use serde::Serialize;
+use std::fmt::Debug;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use vote::Vote;
 
+const GROUP_SIZE: usize = 8;
 const PRUNE_COUNT: usize = 4;
 
 fn add_vote_into_chain<T: Serialize + Clone + PartialEq>(
@@ -57,8 +59,6 @@ fn add_vote_into_chain<T: Serialize + Clone + PartialEq>(
     if let Some(index) = find_blk_index {
         let p_age = PeersAndAge::new(chain[index].num_proofs(), chain[index].total_age());
         let result = Some((chain[index].payload().clone(), p_age));
-
-        // Increase the `experienced valid blocks` counter for invalid blocks in both chains.
         let become_valid = chain[index].block_state(group_size) == BlockState::Valid &&
             prev_blk_state == BlockState::NotYetValid;
 
@@ -79,16 +79,16 @@ fn add_vote_into_chain<T: Serialize + Clone + PartialEq>(
     }
 }
 
-fn march_chain<T: Serialize + Clone + PartialEq>(group_size: usize, chain: &mut Vec<Block<T>>) {
-    if chain.len() <= 1 {
-        return;
-    }
+fn march_chain<T: Debug + Serialize + Clone + PartialEq>(
+    group_size: usize,
+    chain: &mut Vec<Block<T>>,
+) {
     let mut marching_index = chain.len();
     let mut valid_block_count = 0;
     let mut pruned_invalid_blocks = Vec::new();
     // We don't have to iterate through the whole chain, only need to scan to the point that
     // having 'PRUNE_COUNT' valid blocks counted from end.
-    while marching_index > 0 || valid_block_count <= PRUNE_COUNT {
+    while marching_index > 0 && valid_block_count <= PRUNE_COUNT {
         marching_index -= 1;
         if chain[marching_index].block_state(group_size) == BlockState::NotYetValid {
             if chain[marching_index].increase_experienced_blocks() == PRUNE_COUNT {
@@ -106,7 +106,7 @@ fn march_chain<T: Serialize + Clone + PartialEq>(group_size: usize, chain: &mut 
 // Vote -> Quorum Block -> FullBlock (or nearly full Block + Accusation)
 
 #[allow(unused)]
-#[derive(Default, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord)]
 pub struct DataChain {
     blocks: Vec<Block<Elders>>,
     group_size: usize,
@@ -244,6 +244,7 @@ impl DataChain {
     }
 
     pub fn prune_invalid_blocks(&mut self) {
+        // Increase the `experienced_blocks` counter for invalid blocks in both chains.
         march_chain(self.group_size, &mut self.blocks);
         march_chain(self.group_size, &mut self.valid_peers);
     }
@@ -581,6 +582,18 @@ impl DataChain {
     //
 }
 
+impl Default for DataChain {
+    fn default() -> DataChain {
+        DataChain {
+            blocks: Vec::<Block<Elders>>::default(),
+            group_size: GROUP_SIZE,
+            path: None,
+            valid_peers: Vec::<Block<AdultsAndInfants>>::default(),
+            data: Vec::<Block<DataIdentifier>>::default(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -588,8 +601,8 @@ mod tests {
     use rust_sodium;
     use rust_sodium::crypto::sign;
 
-    const GROUP_SIZE: usize = 8;
     const ELDER_DEFAULT_AGE: u8 = 5;
+    const DEFAULT_AGE: u8 = 1;
 
     #[test]
     fn add_vote() {
@@ -606,5 +619,34 @@ mod tests {
             assert!(chain.add_block_vote(vote, &peer_id).is_some());
         }
         assert_eq!(chain.blocks[0].num_proofs(), GROUP_SIZE);
+    }
+
+    #[test]
+    fn prune_invalid_block() {
+        let mut rng = SeededRng::thread_rng();
+        unwrap!(rust_sodium::init_with_rng(&mut rng));
+        let mut chain = DataChain::default();
+        {
+            // Create one invalid block in elder chain.
+            let payload =
+                Elders::ElderAccept(PeerId::new(ELDER_DEFAULT_AGE, sign::gen_keypair().0));
+            let keys = sign::gen_keypair();
+            let vote = Vote::new(&keys.1, payload.clone()).unwrap();
+            let peer_id = PeerId::new(ELDER_DEFAULT_AGE, keys.0);
+            assert!(chain.add_block_vote(vote, &peer_id).is_some());
+        }
+        // Create `PRUNE_COUNT` valid blocks in `adult_and_infant` chain.
+        for _ in 0..PRUNE_COUNT {
+            let payload =
+                AdultsAndInfants::PeerAccept(PeerId::new(DEFAULT_AGE, sign::gen_keypair().0));
+            for _ in 0..GROUP_SIZE {
+                let keys = sign::gen_keypair();
+                let vote = Vote::new(&keys.1, payload.clone()).unwrap();
+                let peer_id = PeerId::new(ELDER_DEFAULT_AGE, keys.0);
+                assert!(chain.add_valid_peers_vote(vote, &peer_id).is_some());
+            }
+        }
+        // The invalid block in the elder chain shall got pruned.
+        assert!(chain.blocks.is_empty());
     }
 }

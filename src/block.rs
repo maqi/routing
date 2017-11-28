@@ -49,7 +49,7 @@ impl PeersAndAge {
     }
 }
 /// Validity and "completeness" of a `Block`. Some `Block`s are complete with less than group_size `Proof`s.
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum BlockState {
     NotYetValid,
     Valid,
