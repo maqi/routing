@@ -141,68 +141,68 @@ impl<T: Serialize + Clone> Block<T> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use maidsafe_utilities::SeededRng;
-    use rand::random;
-    use rust_sodium;
-    use rust_sodium::crypto::sign;
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use maidsafe_utilities::SeededRng;
+//     use rand::random;
+//     use rust_sodium;
+//     use rust_sodium::crypto::sign;
 
-    #[test]
-    fn create_then_remove_add_proofs() {
-        let mut rng = SeededRng::thread_rng();
-        unwrap!(rust_sodium::init_with_rng(&mut rng));
+//     #[test]
+//     fn create_then_remove_add_proofs() {
+//         let mut rng = SeededRng::thread_rng();
+//         unwrap!(rust_sodium::init_with_rng(&mut rng));
 
-        let keys0 = sign::gen_keypair();
-        let keys1 = sign::gen_keypair();
-        let payload = NetworkEvent::PeerKill(keys0.0);
-        let vote0 = Vote::new(&keys0.1, payload.clone()).unwrap();
-        assert!(vote0.validate_signature(&keys0.0));
-        let vote1 = Vote::new(&keys1.1, payload.clone()).unwrap();
-        assert!(vote1.validate_signature(&keys1.0));
-        let proof0 = Proof::new(&keys0.0, random::<u8>(), &vote0).unwrap();
-        assert!(proof0.validate_signature(&payload));
-        let proof1 = Proof::new(&keys1.0, random::<u8>(), &vote1).unwrap();
-        assert!(proof1.validate_signature(&payload));
-        let mut b0 = Block::new(&vote0, &keys0.0, random::<u8>()).unwrap();
-        assert!(proof0.validate_signature(&b0.payload));
-        assert!(proof1.validate_signature(&b0.payload));
-        assert_eq!(b0.total_proofs(), 1);
-        b0.remove_proof(&keys0.0);
-        assert_eq!(b0.total_proofs(), 0);
-        assert!(b0.add_proof(proof0).is_ok());
-        assert_eq!(b0.total_proofs(), 1);
-        assert!(b0.add_proof(proof1).is_ok());
-        assert_eq!(b0.total_proofs(), 2);
-        b0.remove_proof(&keys1.0);
-        assert_eq!(b0.total_proofs(), 1);
-    }
+//         let keys0 = sign::gen_keypair();
+//         let keys1 = sign::gen_keypair();
+//         let payload = NetworkEvent::PeerKill(keys0.0);
+//         let vote0 = Vote::new(&keys0.1, payload.clone()).unwrap();
+//         assert!(vote0.validate_signature(&keys0.0));
+//         let vote1 = Vote::new(&keys1.1, payload.clone()).unwrap();
+//         assert!(vote1.validate_signature(&keys1.0));
+//         let proof0 = Proof::new(&keys0.0, random::<u8>(), &vote0).unwrap();
+//         assert!(proof0.validate_signature(&payload));
+//         let proof1 = Proof::new(&keys1.0, random::<u8>(), &vote1).unwrap();
+//         assert!(proof1.validate_signature(&payload));
+//         let mut b0 = Block::new(&vote0, &keys0.0, random::<u8>()).unwrap();
+//         assert!(proof0.validate_signature(&b0.payload));
+//         assert!(proof1.validate_signature(&b0.payload));
+//         assert_eq!(b0.total_proofs(), 1);
+//         b0.remove_proof(&keys0.0);
+//         assert_eq!(b0.total_proofs(), 0);
+//         assert!(b0.add_proof(proof0).is_ok());
+//         assert_eq!(b0.total_proofs(), 1);
+//         assert!(b0.add_proof(proof1).is_ok());
+//         assert_eq!(b0.total_proofs(), 2);
+//         b0.remove_proof(&keys1.0);
+//         assert_eq!(b0.total_proofs(), 1);
+//     }
 
-    #[test]
-    fn confirm_new_proof_batch() {
-        let mut rng = SeededRng::thread_rng();
-        unwrap!(rust_sodium::init_with_rng(&mut rng));
+//     #[test]
+//     fn confirm_new_proof_batch() {
+//         let mut rng = SeededRng::thread_rng();
+//         unwrap!(rust_sodium::init_with_rng(&mut rng));
 
-        let keys0 = sign::gen_keypair();
-        let keys1 = sign::gen_keypair();
-        let keys2 = sign::gen_keypair();
-        let payload = NetworkEvent::PeerKill(keys0.0);
-        let vote0 = Vote::new(&keys0.1, payload.clone()).unwrap();
-        let vote1 = Vote::new(&keys1.1, payload.clone()).unwrap();
-        let vote2 = Vote::new(&keys2.1, payload.clone()).unwrap();
-        let proof1 = Proof::new(&keys1.0, random::<u8>(), &vote1).unwrap();
-        let proof2 = Proof::new(&keys2.0, random::<u8>(), &vote2).unwrap();
-        // So 3 votes all valid will be added to block
-        let mut b0 = Block::new(&vote0, &keys0.0, random::<u8>()).unwrap();
-        assert!(b0.add_proof(proof1).is_ok());
-        assert!(b0.add_proof(proof2).is_ok());
-        assert_eq!(b0.total_proofs(), 3);
-        // All added validly, so now only use 2 of these
-        let mut my_known_nodes = HashSet::<&PublicKey>::new();
-        assert!(my_known_nodes.insert(&keys0.0));
-        assert!(my_known_nodes.insert(&keys1.0));
-        b0.prune_proofs_except(&my_known_nodes);
-        assert_eq!(b0.total_proofs(), 2);
-    }
-}
+//         let keys0 = sign::gen_keypair();
+//         let keys1 = sign::gen_keypair();
+//         let keys2 = sign::gen_keypair();
+//         let payload = NetworkEvent::PeerKill(keys0.0);
+//         let vote0 = Vote::new(&keys0.1, payload.clone()).unwrap();
+//         let vote1 = Vote::new(&keys1.1, payload.clone()).unwrap();
+//         let vote2 = Vote::new(&keys2.1, payload.clone()).unwrap();
+//         let proof1 = Proof::new(&keys1.0, random::<u8>(), &vote1).unwrap();
+//         let proof2 = Proof::new(&keys2.0, random::<u8>(), &vote2).unwrap();
+//         // So 3 votes all valid will be added to block
+//         let mut b0 = Block::new(&vote0, &keys0.0, random::<u8>()).unwrap();
+//         assert!(b0.add_proof(proof1).is_ok());
+//         assert!(b0.add_proof(proof2).is_ok());
+//         assert_eq!(b0.total_proofs(), 3);
+//         // All added validly, so now only use 2 of these
+//         let mut my_known_nodes = HashSet::<&PublicKey>::new();
+//         assert!(my_known_nodes.insert(&keys0.0));
+//         assert!(my_known_nodes.insert(&keys1.0));
+//         b0.prune_proofs_except(&my_known_nodes);
+//         assert_eq!(b0.total_proofs(), 2);
+//     }
+// }

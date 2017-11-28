@@ -10,7 +10,7 @@ repository = "https://github.com/maidsafe/routing"
 version = "0.33.2"
 
 [dependencies]
-config_file_handler = "~0.8.2"
+config_file_handler = "~0.8.1"
 crust = "~0.28.1"
 fake_clock = "~0.2.0"
 fs2 = "0.4.2"

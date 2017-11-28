@@ -19,7 +19,7 @@ use block::{Block, PeersAndAge};
 use error::RoutingError;
 use fs2::FileExt;
 use maidsafe_utilities::serialisation;
-use network_event::{Elders, DataIdentifier, AdultsAndInfants};
+use network_event::{AdultsAndInfants, DataIdentifier, Elders};
 use peer_id::PeerId;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -483,4 +483,26 @@ impl DataChain {
     //     ))
     // }
     //
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use maidsafe_utilities::SeededRng;
+    use rust_sodium;
+    use rust_sodium::crypto::sign;
+
+    #[test]
+    fn validate() {
+        let mut rng = SeededRng::thread_rng();
+        unwrap!(rust_sodium::init_with_rng(&mut rng));
+
+        let keys = sign::gen_keypair();
+        let peer_id = PeerId::new(5, keys.0);
+        let payload = Elders::ElderAccept(peer_id.clone());
+        let vote = Vote::new(&keys.1, payload).unwrap();
+
+        let mut chain = DataChain::default();
+        assert!(chain.add_vote(vote, &peer_id).is_some());
+    }
 }
