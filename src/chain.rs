@@ -15,16 +15,93 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use block::{Block, PeersAndAge};
+use block::{Block, BlockState, PeersAndAge};
 use error::RoutingError;
 use fs2::FileExt;
 use maidsafe_utilities::serialisation;
 use network_event::{AdultsAndInfants, DataIdentifier, Elders};
 use peer_id::PeerId;
+use serde::Serialize;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use vote::Vote;
+
+const PRUNE_COUNT: usize = 4;
+
+fn add_vote_into_chain<T: Serialize + Clone + PartialEq>(
+    group_size: usize,
+    vote: Vote<T>,
+    peer_id: &PeerId,
+    chain: &mut Vec<Block<T>>,
+) -> (bool, Option<(T, PeersAndAge)>) {
+    let mut find_blk_index = None;
+    let mut prev_blk_state = BlockState::NotYetValid;
+    for (blk_index, blk) in chain.iter_mut().enumerate() {
+        if blk.payload() == vote.payload() {
+            prev_blk_state = blk.block_state(group_size);
+            if blk.proofs().iter().any(|x| {
+                x.peer_id().pub_key() == peer_id.pub_key()
+            })
+            {
+                info!("duplicate proof");
+                return (false, None);
+            }
+
+            blk.add_proof(vote.proof(peer_id).unwrap()).unwrap();
+            find_blk_index = Some(blk_index);
+            break;
+        }
+    }
+
+    if let Some(index) = find_blk_index {
+        let p_age = PeersAndAge::new(chain[index].num_proofs(), chain[index].total_age());
+        let result = Some((chain[index].payload().clone(), p_age));
+
+        // Increase the `experienced valid blocks` counter for invalid blocks in both chains.
+        let become_valid = chain[index].block_state(group_size) == BlockState::Valid &&
+            prev_blk_state == BlockState::NotYetValid;
+
+        (become_valid, result)
+    } else {
+        if let Ok(blk) = Block::new(&vote, &peer_id) {
+            chain.push(blk.clone());
+            return (
+                false,
+                Some((
+                    blk.payload().clone(),
+                    PeersAndAge::new(1, peer_id.age() as usize),
+                )),
+            );
+        }
+        info!("Could not find any block for this proof");
+        return (false, None);
+    }
+}
+
+fn march_chain<T: Serialize + Clone + PartialEq>(group_size: usize, chain: &mut Vec<Block<T>>) {
+    if chain.len() <= 1 {
+        return;
+    }
+    let mut marching_index = chain.len();
+    let mut valid_block_count = 0;
+    let mut pruned_invalid_blocks = Vec::new();
+    // We don't have to iterate through the whole chain, only need to scan to the point that
+    // having 'PRUNE_COUNT' valid blocks counted from end.
+    while marching_index > 0 || valid_block_count <= PRUNE_COUNT {
+        marching_index -= 1;
+        if chain[marching_index].block_state(group_size) == BlockState::NotYetValid {
+            if chain[marching_index].increase_experienced_blocks() == PRUNE_COUNT {
+                pruned_invalid_blocks.push(marching_index);
+            }
+        } else {
+            valid_block_count += 1;
+        }
+    }
+    for idx in pruned_invalid_blocks {
+        let _ = chain.remove(idx);
+    }
+}
 
 // Vote -> Quorum Block -> FullBlock (or nearly full Block + Accusation)
 
@@ -119,37 +196,56 @@ impl DataChain {
         }
     }
 
+    // pub fn add_vote<T>(&mut self, vote: Vote, peer_id: &PeerId) -> Option<(T, PeersAndAge)> {
+    //     if !vote.validate_signature(peer_id.pub_key()) {
+    //         return None;
+    //     }
 
-    fn add_vote(&mut self, vote: Vote<Elders>, peer_id: &PeerId) -> Option<(Elders, PeersAndAge)> {
+    //     match vote.payload() {
+    //         Elders => self.add_vote_into_chain(vote, peer_id, &mut self.blocks),
+    //         _ => self.add_vote_into_chain(vote, peer_id, &mut self.valid_peers),
+    //     }
+    // }
+
+    /// Add vote relates to elders into chain.
+    pub fn add_block_vote(
+        &mut self,
+        vote: Vote<Elders>,
+        peer_id: &PeerId,
+    ) -> Option<(Elders, PeersAndAge)> {
         if !vote.validate_signature(peer_id.pub_key()) {
             return None;
         }
 
-        for blk in &mut self.blocks.iter_mut() {
-            if blk.payload() == vote.payload() {
-                if blk.proofs().iter().any(|x| {
-                    x.peer_id().pub_key() == peer_id.pub_key()
-                })
-                {
-                    info!("duplicate proof");
-                    return None;
-                }
-
-                blk.add_proof(vote.proof(peer_id).unwrap()).unwrap();
-
-                let p_age = PeersAndAge::new(blk.num_proofs(), blk.total_age());
-                return Some((blk.payload().clone(), p_age));
-            }
+        let (become_valid, result) =
+            add_vote_into_chain(self.group_size, vote, peer_id, &mut self.blocks);
+        if become_valid {
+            self.prune_invalid_blocks();
         }
-        if let Ok(ref mut blk) = Block::new(&vote, &peer_id) {
-            self.blocks.push(blk.clone());
-            return Some((
-                blk.payload().clone(),
-                PeersAndAge::new(1, peer_id.age() as usize),
-            ));
+        result
+    }
+
+    /// Add vote relates to adult and infant into chain.
+    pub fn add_valid_peers_vote(
+        &mut self,
+        vote: Vote<AdultsAndInfants>,
+        peer_id: &PeerId,
+    ) -> Option<(AdultsAndInfants, PeersAndAge)> {
+        if !vote.validate_signature(peer_id.pub_key()) {
+            return None;
         }
-        info!("Could not find any block for this proof");
-        None
+
+        let (become_valid, result) =
+            add_vote_into_chain(self.group_size, vote, peer_id, &mut self.valid_peers);
+        if become_valid {
+            self.prune_invalid_blocks();
+        }
+        result
+    }
+
+    pub fn prune_invalid_blocks(&mut self) {
+        march_chain(self.group_size, &mut self.blocks);
+        march_chain(self.group_size, &mut self.valid_peers);
     }
 
     /// Assumes we trust the first `Block`
@@ -507,7 +603,7 @@ mod tests {
             let keys = sign::gen_keypair();
             let vote = Vote::new(&keys.1, payload.clone()).unwrap();
             let peer_id = PeerId::new(ELDER_DEFAULT_AGE, keys.0);
-            assert!(chain.add_vote(vote, &peer_id).is_some());
+            assert!(chain.add_block_vote(vote, &peer_id).is_some());
         }
         assert_eq!(chain.blocks[0].num_proofs(), GROUP_SIZE);
     }

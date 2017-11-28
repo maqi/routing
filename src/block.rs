@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use error::RoutingError;
 use peer_id::PeerId;
 use proof::Proof;
@@ -48,6 +49,7 @@ impl PeersAndAge {
     }
 }
 /// Validity and "completeness" of a `Block`. Some `Block`s are complete with less than group_size `Proof`s.
+#[derive(PartialEq)]
 pub enum BlockState {
     NotYetValid,
     Valid,
@@ -63,6 +65,7 @@ pub enum BlockState {
 pub struct Block<T> {
     payload: T,
     proofs: BTreeSet<Proof>,
+    experienced_blocks: usize,
 }
 
 impl<T: Serialize + Clone> Block<T> {
@@ -78,6 +81,7 @@ impl<T: Serialize + Clone> Block<T> {
             return Ok(Block::<T> {
                 payload: vote.payload().clone(),
                 proofs: proofset,
+                experienced_blocks: 0,
             });
         }
         Err(RoutingError::FailedSignature)
@@ -138,6 +142,26 @@ impl<T: Serialize + Clone> Block<T> {
     /// getter
     pub fn payload(&self) -> &T {
         &self.payload
+    }
+
+    /// setter
+    pub fn increase_experienced_blocks(&mut self) -> usize {
+        self.experienced_blocks += 1;
+        self.experienced_blocks
+    }
+
+    pub fn block_state(&self, group_size: usize) -> BlockState {
+        // The proofs in block needs to be validated against the chain to confirm they all from
+        // valid elders.
+        // TODO: here assume the proofs are all from valid elders, this need to be corrected.
+        let num_of_proofs = self.proofs.iter().count();
+        if num_of_proofs * QUORUM_DENOMINATOR <= group_size * QUORUM_NUMERATOR {
+            BlockState::NotYetValid
+        } else if num_of_proofs == group_size {
+            BlockState::Full
+        } else {
+            BlockState::Valid
+        }
     }
 }
 
