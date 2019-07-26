@@ -128,7 +128,6 @@ impl RelocatingNode {
             Relocate { .. }
             | ExpectCandidate { .. }
             | ConnectionRequest { .. }
-            | NeighbourInfo(..)
             | Merge(..)
             | UserMessage { .. }
             | NodeApproval { .. }

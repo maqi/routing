@@ -205,8 +205,7 @@ impl Chain {
 
     /// Returns the next accumulated event.
     ///
-    /// If the event is a `SectionInfo` or `NeighbourInfo`, it also updates the corresponding
-    /// containers.
+    /// If the event is a `SectionInfo`, it also updates the corresponding containers.
     pub fn poll(&mut self) -> Result<Option<NetworkEvent>, RoutingError> {
         let opt_event_proofs = self
             .chain_accumulator
@@ -893,7 +892,7 @@ impl Chain {
     /// Update our version which has signed the neighbour infos to whichever latest version
     /// possible.
     ///
-    /// If we want to do for a particular `NeighbourInfo` then supply that else we will go over the
+    /// If we want to do for a particular neighbour_info then supply that else we will go over the
     /// entire list.
     fn check_and_clean_neighbour_infos(&mut self, for_pfx: Option<&Prefix<XorName>>) {
         // Update neighbour version signed by self section

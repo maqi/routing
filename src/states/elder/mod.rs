@@ -455,18 +455,6 @@ impl Elder {
         Ok(())
     }
 
-    fn send_neighbour_infos(&mut self) {
-        self.chain.other_prefixes().iter().for_each(|pfx| {
-            let payload = *self.chain.our_info().hash();
-            let src = Authority::ManagedNode(*self.full_id.public_id().name());
-            let dst = Authority::PrefixSection(*pfx);
-            let content = MessageContent::NeighbourInfo(payload);
-            if let Err(err) = self.send_routing_message(src, dst, content) {
-                debug!("{} Failed to send NeighbourInfo: {:?}.", self, err);
-            }
-        });
-    }
-
     /// Returns `Ok` if the peer's state indicates it's allowed to send the given message type.
     fn check_direct_message_sender(
         &self,
@@ -662,7 +650,6 @@ impl Elder {
                 src @ ManagedNode(_),
                 dst @ ManagedNode(_),
             ) => self.handle_connection_request(&encrypted_conn_info, pub_id, src, dst, outbox),
-            (NeighbourInfo(_digest), ManagedNode(_), PrefixSection(_)) => Ok(()),
             (Merge(digest), PrefixSection(_), PrefixSection(_)) => self.handle_merge(digest),
             (UserMessage { content, .. }, src, dst) => {
                 outbox.send_event(content.into_event(src, dst));
@@ -2085,12 +2072,6 @@ impl Approved for Elder {
         if sec_info.prefix().is_extension_of(&old_pfx) {
             self.finalise_prefix_change()?;
             self.send_event(Event::SectionSplit(*sec_info.prefix()), outbox);
-            // After a section split, the normal `send_neighbour_infos` action for the neighbouring
-            // section will be triggered here (and only here).  Meanwhile own section's sending
-            // action will be triggered at the other place later on (`self_sec_update` is true).
-            if !sec_info.prefix().matches(self.name()) {
-                self.send_neighbour_infos();
-            }
         } else if old_pfx.is_extension_of(sec_info.prefix()) {
             self.finalise_prefix_change()?;
             self.send_event(Event::SectionMerged(*sec_info.prefix()), outbox);
@@ -2102,7 +2083,6 @@ impl Approved for Elder {
 
         if self_sec_update {
             self.chain.reset_candidate_if_member_of(sec_info.members());
-            self.send_neighbour_infos();
         } else {
             self.remove_from_proving_section_cache(&sec_info);
             // Update their_keys in chain

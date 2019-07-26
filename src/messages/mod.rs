@@ -443,9 +443,6 @@ pub enum MessageContent {
         /// The message's unique identifier.
         msg_id: MessageId,
     },
-    /// Inform neighbours about our new section. The payload is just a unique hash, as the actual
-    /// information is included in the `SignedMessage`'s proving sections anyway.
-    NeighbourInfo(Digest256),
     /// Inform neighbours that we need to merge, and that the successor of the section info with
     /// the given hash will be the merged section.
     Merge(Digest256),
@@ -527,9 +524,6 @@ impl Debug for MessageContent {
                 "RelocateResponse {{ {:?}, {:?}, {:?} }}",
                 target_interval, section, message_id
             ),
-            NeighbourInfo(ref digest) => {
-                write!(formatter, "NeighbourInfo({:.14?})", HexFmt(digest),)
-            }
             Merge(ref digest) => write!(formatter, "Merge({:.14?})", HexFmt(digest)),
             UserMessage {
                 ref content,
