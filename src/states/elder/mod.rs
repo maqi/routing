@@ -440,7 +440,9 @@ impl Elder {
                 NetworkEvent::OurMerge => false,
 
                 // Keep: Still relevant after prefix change.
-                NetworkEvent::NeighbourMerge(_) | NetworkEvent::ProvingSections(_, _) => true,
+                NetworkEvent::NeighbourMerge(_)
+                | NetworkEvent::ProvingSections(_, _)
+                | NetworkEvent::AckMessage(_) => true,
             })
             .for_each(|event| {
                 self.vote_for_event(event.clone());
@@ -671,14 +673,14 @@ impl Elder {
                 outbox.send_event(content.into_event(src, dst));
                 Ok(())
             }
-            (AckMessage(_sec_info), Section(_src), Section(_dst)) => {
+            (AckMessage(sec_info), Section(src), Section(dst)) => {
                 // TODO: The shared_state shall be updated on when on consensus.
                 //       Which is part of the issue 1670 to handle it.
                 #[cfg(feature = "mock_base")]
                 {
                     self.received_section_info_ack = true;
                 }
-                Ok(())
+                self.handle_ack_message(sec_info, src, dst)
             }
             (content, src, dst) => {
                 debug!(
@@ -688,6 +690,18 @@ impl Elder {
                 Err(RoutingError::BadAuthority)
             }
         }
+    }
+
+    fn handle_ack_message(
+        &mut self,
+        sec_info: SectionInfo,
+        _src: XorName,
+        _dst: XorName,
+    ) -> Result<(), RoutingError> {
+        // Prefix doesn't need to match, as we may get an ack for the section where we were before
+        // splitting.
+        self.vote_for_event(NetworkEvent::AckMessage(sec_info));
+        Ok(())
     }
 
     fn send_section_info_ack(&mut self, sec_info: SectionInfo) {
@@ -2081,6 +2095,12 @@ impl Approved for Elder {
             self.chain.reset_candidate();
             self.peer_mgr.reset_candidate();
         }
+        Ok(())
+    }
+
+    fn handle_ack_message_event(&mut self, sec_info: SectionInfo) -> Result<(), RoutingError> {
+        self.chain
+            .update_their_knowledge(*sec_info.prefix(), *sec_info.version());
         Ok(())
     }
 
