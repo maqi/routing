@@ -29,6 +29,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Display, Formatter};
 use std::iter;
 use std::mem;
+use unwrap::unwrap;
 
 /// Amount added to `min_section_size` when deciding whether a bucket split can happen. This helps
 /// protect against rapid splitting and merging in the face of moderate churn.
@@ -440,12 +441,6 @@ impl Chain {
         self.neighbour_infos.keys().cloned().collect()
     }
 
-    /// Inserts the `version` of our own section into `their_knowledge` for `pfx`.
-    pub fn update_their_knowledge(&mut self, pfx: Prefix<XorName>, version: u64) {
-        // TODO: Don't replace with earlier? What if the neighbour split or merged?
-        let _ = self.their_knowledge.insert(pfx, version);
-    }
-
     /// Checks if given `PublicId` is a valid peer by checking if we have them as a member of self
     /// section or neighbours.
     pub fn is_peer_valid(&self, pub_id: &PublicId) -> bool {
@@ -830,6 +825,25 @@ impl Chain {
             self.check_and_clean_neighbour_infos(Some(&pfx));
         }
         Ok(())
+    }
+
+    /// Inserts the `version` of our own section into `their_knowledge` for `pfx`.
+    pub fn update_their_knowledge(&mut self, prefix: Prefix<XorName>, version: u64) {
+        if let Some(&pfx) = self
+            .their_knowledge
+            .keys()
+            .find(|pfx| pfx.is_compatible(&prefix))
+        {
+            let old_version = unwrap!(self.their_knowledge.remove(&pfx));
+            let old_pfx_sibling = pfx.sibling();
+            let mut current_pfx = prefix.sibling();
+            while !self.their_knowledge.contains_key(&current_pfx) && current_pfx != old_pfx_sibling
+            {
+                let _ = self.their_knowledge.insert(current_pfx, old_version);
+                current_pfx = current_pfx.popped().sibling();
+            }
+        }
+        let _ = self.their_knowledge.insert(prefix, version);
     }
 
     /// Updates `their_keys` in the shared state
