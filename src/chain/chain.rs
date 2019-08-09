@@ -229,6 +229,7 @@ impl Chain {
 
         match event {
             NetworkEvent::SectionInfo(ref sec_info) => {
+                println!("{:?} adding sec_info {:?}", self.our_id, sec_info);
                 if !sec_info.prefix().matches(self.our_id.name()) {
                     self.update_their_keys(
                         *sec_info.prefix(),
@@ -700,9 +701,11 @@ impl Chain {
                     // Add our_info first so when we add sibling info, its a valid neighbour prefix
                     // which does not get immediately purged.
                     if cache_pfx.matches(self.our_id.name()) {
+                        println!("{:?} add cache first", self.our_id());
                         self.do_add_section_info(cache_info, cache_proofs)?;
                         self.do_add_section_info(sec_info, proofs)?;
                     } else {
+                        println!("{:?} add sections first", self.our_id());
                         self.do_add_section_info(sec_info, proofs)?;
                         self.do_add_section_info(cache_info, cache_proofs)?;
                     }
@@ -711,6 +714,7 @@ impl Chain {
             }
         }
 
+        println!("{:?} add section info without cache", self.our_id());
         self.do_add_section_info(sec_info, proofs)
     }
 
@@ -728,6 +732,11 @@ impl Chain {
                     proofs.clone(),
                 ));
             self.state.our_infos.push((sec_info.clone(), proofs));
+            println!(
+                "{:?} updated our_infos to {:?}",
+                self.our_id(),
+                self.state.our_infos
+            );
             if !self.is_member && sec_info.members().contains(&self.our_id) {
                 self.is_member = true;
             }

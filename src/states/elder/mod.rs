@@ -1285,7 +1285,13 @@ impl Elder {
     }
 
     fn vote_for_event(&mut self, event: NetworkEvent) {
-        trace!("{} Vote for Event {:?}", self, event);
+        match event {
+            NetworkEvent::SectionInfo(_) => {
+                println!("{} Vote for Event {:?}", self, event);
+            }
+            _ => {}
+        }
+
         self.parsec_map.vote_for(event, &self.log_ident())
     }
 

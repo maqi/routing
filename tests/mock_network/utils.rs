@@ -873,6 +873,10 @@ fn add_node_to_section<T: Rng>(
     );
     poll_and_resend(nodes, &mut []);
     expect_any_event!(unwrap!(nodes.last_mut()), Event::Connected);
+    println!(
+        "=============  added node {:?} ================= ",
+        nodes[nodes.len() - 1].name()
+    );
     assert!(prefix.matches(&nodes[nodes.len() - 1].name()));
 }
 

@@ -141,7 +141,7 @@ pub trait Approved: Relocated {
                 } => {
                     // FIXME: Validate with Chain info.
 
-                    trace!(
+                    println!(
                         "{} Parsec Genesis {}: group {:?} - related_info {}",
                         self,
                         parsec_version,
@@ -154,6 +154,18 @@ pub trait Approved: Relocated {
                     continue;
                 }
                 Observation::OpaquePayload(event) => {
+                    match event {
+                        NetworkEvent::SectionInfo(ref sec_info) => {
+                            println!(
+                                "{} got proofs of {:?} for sec_info {:?}",
+                                self,
+                                block.proofs(),
+                                sec_info
+                            );
+                        }
+                        _ => {}
+                    }
+
                     if let Some(proof) = block.proofs().iter().next().map(|p| Proof {
                         pub_id: *p.public_id(),
                         sig: *p.signature(),

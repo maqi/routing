@@ -229,7 +229,10 @@ fn multiple_joining_nodes() {
 
 #[test]
 fn multi_split() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(
+        MIN_SECTION_SIZE,
+        Some([1375071934, 3526031663, 1300996194, 2692224857]),
+    );
     let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 2], false);
     verify_invariant_for_all_nodes(&network, &mut nodes);
 }

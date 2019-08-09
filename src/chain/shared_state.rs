@@ -57,9 +57,11 @@ impl SharedState {
     pub fn new(section_info: SectionInfo) -> Self {
         let pk = BlsPublicKey::from_section_info(&section_info);
         let our_history = SectionProofChain::from_genesis(pk);
+        let our_infos = NonEmptyList::new((section_info.clone(), Default::default()));
+        println!("our_infos in SharedState::new is {:?}", our_infos);
         Self {
-            new_info: section_info.clone(),
-            our_infos: NonEmptyList::new((section_info, Default::default())),
+            new_info: section_info,
+            our_infos,
             neighbour_infos: Default::default(),
             change: PrefixChange::None,
             split_cache: None,
@@ -96,6 +98,8 @@ impl SharedState {
                     self.our_infos,
                     our_infos
                 );
+            } else {
+                println!("correct genesis {:?}", our_infos);
             }
             if self.our_history != our_history {
                 log_or_panic!(
