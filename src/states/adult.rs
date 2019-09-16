@@ -425,6 +425,11 @@ impl Approved for Adult {
         debug!("{} - Unhandled NeighbourMerge event", self);
         Ok(())
     }
+
+    fn handle_prune(&mut self) -> Result<(), RoutingError> {
+        debug!("{} - Unhandled ParsecPrune event", self);
+        Ok(())
+    }
 }
 
 impl Display for Adult {

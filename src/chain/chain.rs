@@ -281,6 +281,7 @@ impl Chain {
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::ExpectCandidate(_)
             | AccumulatingEvent::PurgeCandidate(_)
+            | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::SendAckMessage(_) => (),
         }
         Ok(Some(event))
@@ -382,13 +383,22 @@ impl Chain {
             .should_vote_for_merge(self.min_sec_size, self.neighbour_infos())
     }
 
-    /// Finalises a split or merge - creates a `GenesisPfxInfo` for the new graph and returns the
-    /// cached and currently accumulated events.
+    /// Finalises a prune.
+    pub fn finalise_prune(&mut self) -> Result<PrefixChangeOutcome, RoutingError> {
+        self.completes_prefix_change()
+    }
+
+    /// Finalises a split or merge.
     pub fn finalise_prefix_change(&mut self) -> Result<PrefixChangeOutcome, RoutingError> {
         // TODO: Bring back using their_knowledge to clean_older section in our_infos
         self.check_and_clean_neighbour_infos(None);
         self.state.change = PrefixChange::None;
+        self.completes_prefix_change()
+    }
 
+    /// Finalises a split, merge or prune - creates a `GenesisPfxInfo` for the new graph and returns
+    /// the cached and currently accumulated events.
+    fn completes_prefix_change(&mut self) -> Result<PrefixChangeOutcome, RoutingError> {
         let remaining = self.chain_accumulator.reset_accumulator(&self.our_id);
         let event_cache = mem::replace(&mut self.event_cache, Default::default());
         let merges = mem::replace(&mut self.state.merging, Default::default())

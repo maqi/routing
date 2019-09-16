@@ -93,6 +93,9 @@ pub trait Approved: Relocated {
     fn handle_purge_candidate_event(&mut self, old_public_id: PublicId)
         -> Result<(), RoutingError>;
 
+    /// Handles an accumulated `ParsecPrune` event.
+    fn handle_prune(&mut self) -> Result<(), RoutingError>;
+
     fn handle_parsec_request(
         &mut self,
         msg_version: u64,
@@ -255,12 +258,7 @@ pub trait Approved: Relocated {
                 AccumulatingEvent::PurgeCandidate(old_public_id) => {
                     self.handle_purge_candidate_event(old_public_id)?
                 }
-                AccumulatingEvent::ParsecPrune => {
-                    info!(
-                        "{} Handling chain {:?} not yet implemented, ignoring.",
-                        self, event
-                    );
-                }
+                AccumulatingEvent::ParsecPrune => self.handle_prune()?,
             }
 
             our_pfx = *self.chain_mut().our_prefix();

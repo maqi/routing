@@ -337,26 +337,42 @@ impl Elder {
         }
     }
 
+    fn finalise_prune(&mut self) -> Result<(), RoutingError> {
+        let prefix_change_outcome = self.chain.finalise_prune()?;
+        self.complete_prefix_change(prefix_change_outcome)
+    }
+
     fn finalise_prefix_change(&mut self) -> Result<(), RoutingError> {
         // Clear any relocation overrides
         self.next_relocation_dst = None;
         self.next_relocation_interval = None;
 
+        let prefix_change_outcome = self.chain.finalise_prefix_change()?;
+
+        self.gen_pfx_info = prefix_change_outcome.gen_pfx_info.clone();
+        self.chain.reset_candidate();
+        self.peer_mgr.reset_candidate();
+
+        self.complete_prefix_change(prefix_change_outcome)
+    }
+
+    fn complete_prefix_change(
+        &mut self,
+        prefix_change_outcome: PrefixChangeOutcome,
+    ) -> Result<(), RoutingError> {
         let drained_obs: Vec<_> = self
             .parsec_map
             .our_unpolled_observations()
             .cloned()
             .collect();
 
+        self.init_parsec(); // We don't reset the chain on prefix change.
+
         let PrefixChangeOutcome {
-            gen_pfx_info,
             mut cached_events,
             completed_events,
-        } = self.chain.finalise_prefix_change()?;
-        self.gen_pfx_info = gen_pfx_info;
-        self.chain.reset_candidate();
-        self.peer_mgr.reset_candidate();
-        self.init_parsec(); // We don't reset the chain on prefix change.
+            ..
+        } = prefix_change_outcome;
 
         for obs in drained_obs {
             let event = match obs {
@@ -394,7 +410,6 @@ impl Elder {
                 | AccumulatingEvent::ExpectCandidate(_)
                 | AccumulatingEvent::ParsecPrune
                 | AccumulatingEvent::PurgeCandidate(_) => false,
-
                 // Keep: Additional signatures for neighbours for sec-msg-relay.
                 AccumulatingEvent::SectionInfo(ref sec_info) => {
                     our_pfx.is_neighbour(sec_info.prefix())
@@ -1834,6 +1849,18 @@ impl Approved for Elder {
             self.peer_mgr.reset_candidate();
         }
         Ok(())
+    }
+
+    fn handle_prune(&mut self) -> Result<(), RoutingError> {
+        if self.chain.prefix_change() != PrefixChange::None {
+            log_or_panic!(
+                LogLevel::Warn,
+                "{} Tring to prune parsec during prefix change.",
+                self
+            );
+        }
+
+        self.finalise_prune()
     }
 
     fn handle_section_info_event(
