@@ -1614,6 +1614,10 @@ impl Elder {
     ) {
         self.send_message_to_targets(dst_targets, dg_size, message)
     }
+
+    pub fn vote_for_prune(&mut self) {
+        self.vote_for_event(AccumulatingEvent::ParsecPrune)
+    }
 }
 
 impl Bootstrapped for Elder {

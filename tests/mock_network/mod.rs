@@ -464,3 +464,22 @@ fn vote_prune() {
         .iter()
         .any(|node| node.chain().parsec_prune_accumulated() > 0));
 }
+
+fn carry_out_parsec_pruning() {
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, 2 * MIN_SECTION_SIZE);
+    poll_and_resend(&mut nodes);
+
+    for node in nodes.iter_mut() {
+        let _ = node
+            .inner
+            .elder_state_mut()
+            .map(|state| state.vote_for_prune());
+    }
+    poll_and_resend(&mut nodes);
+
+    nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
+    poll_and_resend(&mut nodes);
+
+    verify_invariant_for_all_nodes(&network, &mut nodes);
+}
