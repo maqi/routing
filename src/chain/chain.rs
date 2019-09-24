@@ -281,7 +281,6 @@ impl Chain {
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::ExpectCandidate(_)
             | AccumulatingEvent::PurgeCandidate(_)
-            | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::SendAckMessage(_) => (),
         }
         Ok(Some(event))

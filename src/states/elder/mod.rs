@@ -1618,6 +1618,10 @@ impl Elder {
     pub fn vote_for_prune(&mut self) {
         self.vote_for_event(AccumulatingEvent::ParsecPrune)
     }
+
+    pub fn parsec_map_size(&self) -> u64 {
+        self.parsec_map.get_size()
+    }
 }
 
 impl Bootstrapped for Elder {

@@ -213,17 +213,6 @@ impl ParsecMap {
             .flatten()
     }
 
-    #[cfg(feature = "mock_base")]
-    pub fn has_unpolled_observations(&self) -> bool {
-        let parsec = if let Some(parsec) = self.map.values().last() {
-            parsec
-        } else {
-            return false;
-        };
-
-        parsec.has_unpolled_observations()
-    }
-
     pub fn needs_pruning(&self) -> bool {
         self.size_counter.needs_pruning()
     }
@@ -241,6 +230,23 @@ impl ParsecMap {
                 self.size_counter,
             );
         }
+    }
+}
+
+#[cfg(feature = "mock_base")]
+impl ParsecMap {
+    pub fn has_unpolled_observations(&self) -> bool {
+        let parsec = if let Some(parsec) = self.map.values().last() {
+            parsec
+        } else {
+            return false;
+        };
+
+        parsec.has_unpolled_observations()
+    }
+
+    pub fn get_size(&self) -> u64 {
+        self.size_counter.size_counter
     }
 }
 
