@@ -270,7 +270,7 @@ impl Approved {
     }
 
     pub fn handle_consensus(&mut self, vote: Vote, proof: Proof) -> Result<Vec<Command>> {
-        debug!("handle consensus on {:?}", vote);
+        info!("handle consensus on {:?}", vote);
 
         match vote {
             Vote::Online {

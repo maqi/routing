@@ -80,9 +80,10 @@ impl Network {
         // FIXME: these operations are not commutative:
 
         for entry in other.neighbours {
-            if entry.verify(section_chain) {
-                let _ = self.neighbours.insert(entry);
-            }
+            // if entry.verify(section_chain) {
+            info!("During merge, inserting neighbour {:?}", entry.value.prefix);
+            let _ = self.neighbours.insert(entry);
+            // }
         }
 
         for entry in other.keys {
@@ -103,6 +104,8 @@ impl Network {
         // if !elders_info.verify(section_chain) {
         //     return false;
         // }
+
+        info!("Updating neighbour of {:?}", elders_info.value.prefix);
 
         if let Some(old) = self.neighbours.insert(elders_info.clone()) {
             if old == elders_info {
@@ -150,6 +153,7 @@ impl Network {
             .collect();
 
         for prefix in to_remove {
+            info!("Pruning neighbour {:?}", prefix);
             let _ = self.neighbours.remove(&prefix);
         }
     }
