@@ -200,6 +200,11 @@ impl Routing {
         self.stage.comm.our_connection_info().await
     }
 
+    /// Returns the Section Proof Chain
+    pub async fn section_chain(&self) -> SectionProofChain {
+        self.stage.state.lock().await.section_chain()
+    }
+
     /// Prefix of our section
     pub async fn our_prefix(&self) -> Prefix {
         *self.stage.state.lock().await.section().prefix()
