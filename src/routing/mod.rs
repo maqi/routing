@@ -41,8 +41,10 @@ use ed25519_dalek::{Keypair, PublicKey, Signature, Signer};
 use itertools::Itertools;
 use qp2p::{Message as Qp2pMessage, RecvStream, SendStream};
 use sn_messaging::{
-    client::MsgEnvelope, infrastructure::{ErrorResponse, Message as InfrastructureMessage},
-    node::NodeMessage, MessageType, WireMsg,
+    client::MsgEnvelope,
+    infrastructure::{ErrorResponse, Message as InfrastructureMessage},
+    node::NodeMessage,
+    MessageType, WireMsg,
 };
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{sync::mpsc, task};
