@@ -11,7 +11,7 @@ use crate::{
     agreement::{DkgFailureProofSet, Proposal},
     messages::Message,
     relocation::SignedRelocateDetails,
-    section::{EldersInfo, SectionKeyShare},
+    section::{SectionAuthorityProvider, SectionKeyShare},
     XorName,
 };
 use bls_signature_aggregator::Proof;
@@ -56,7 +56,7 @@ pub(crate) enum Command {
     /// Handle the outcome of a DKG session where we are one of the participants (that is, one of
     /// the proposed new elders).
     HandleDkgOutcome {
-        elders_info: EldersInfo,
+        section_auth: SectionAuthorityProvider,
         outcome: SectionKeyShare,
     },
     /// Handle a DKG failure that was observed by a majority of the DKG participants.
@@ -159,11 +159,11 @@ impl Debug for Command {
                 .field("proof.public_key", &proof.public_key)
                 .finish(),
             Self::HandleDkgOutcome {
-                elders_info,
+                section_auth,
                 outcome,
             } => f
                 .debug_struct("HandleDkgOutcome")
-                .field("elders_info", elders_info)
+                .field("section_auth", section_auth)
                 .field("outcome", &outcome.public_key_set.public_key())
                 .finish(),
             Self::HandleDkgFailure(proofs) => {
