@@ -396,10 +396,9 @@ impl<'a> State<'a> {
                             relocate_payload: relocate_payload.clone(),
                             resource_proof_response: None,
                         };
-                        let recipients = section_auth
-                            .peers()
-                            .cloned()
-                            .map(|peer| (*peer.addr(), *peer.name()))
+                        let recipients = section_auth.elders
+                            .iter()
+                            .map(|(name, addr)| (*addr, *name))
                             .collect();
                         self.send_join_requests(join_request, recipients, section_key)
                             .await?;
@@ -777,7 +776,7 @@ mod tests {
             assert_eq!(dest_info.dest_section_pk, pk);
             itertools::assert_equal(
                 recipients,
-                section_auth.peers().map(|peer| (*peer.addr(), *peer.name())),
+                section_auth.elders.iter().map(|(name, addr)| (*addr, *name)),
             );
             assert_matches!(message.variant(), Variant::JoinRequest(request) => {
                 assert_eq!(request.section_key, pk);
@@ -1015,7 +1014,8 @@ mod tests {
         let (recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
-        let (elders_info, mut nodes) = gen_elders_info(Prefix::default(), ELDER_SIZE);
+        let (section_auth, mut nodes) =
+            gen_section_authority_provider(Prefix::default(), ELDER_SIZE);
         let bootstrap_node = nodes.remove(0);
         let bootstrap_addr = bootstrap_node.addr;
 
@@ -1051,9 +1051,9 @@ mod tests {
             );
 
             let infrastructure_info = SectionInfo {
-                prefix: elders_info.prefix,
+                prefix: section_auth.prefix,
                 pk_set,
-                elders: elders_info
+                elders: section_auth
                     .peers()
                     .map(|peer| (*peer.name(), *peer.addr()))
                     .collect(),

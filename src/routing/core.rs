@@ -20,7 +20,7 @@ use crate::{
     },
     crypto, delivery_group,
     error::{Error, Result},
-    event::{Event, NodeElderChange},
+    event::{Elders, Event, NodeElderChange},
     message_filter::MessageFilter,
     messages::{
         JoinRequest, Message, MessageHash, MessageStatus, PlainMessage, ResourceProofResponse,
@@ -324,10 +324,9 @@ impl Core {
                         .network
                         .closest(&name)
                         .unwrap_or_else(|| self.section.authority_provider());
-                    let addrs = section
-                        .peers()
-                        .cloned()
-                        .map(|peer| (*peer.name(), *peer.addr()))
+                    let addrs = section.elders
+                        .iter()
+                        .map(|(name, addr)| (*name, *addr))
                         .collect_vec();
                     GetSectionResponse::Redirect(addrs)
                 };
@@ -535,7 +534,6 @@ impl Core {
                 .authority_provider()
                 .peers()
                 .filter(|peer| *peer.name() != name)
-                .copied()
                 .collect();
             trace!(
                 "Casting connectivity complaint against {:?} {:?}",
@@ -567,7 +565,6 @@ impl Core {
             .authority_provider()
             .peers()
             .filter(|peer| !names.contains(peer.name()))
-            .copied()
             .collect();
         let mut result: Vec<Command> = Vec::new();
         for name in names.iter() {
@@ -587,7 +584,7 @@ impl Core {
         key_share: SectionKeyShare,
     ) -> Result<Vec<Command>> {
         let proposal = Proposal::SectionInfo(section_auth);
-        let recipients: Vec<_> = self.section.authority_provider().peers().copied().collect();
+        let recipients: Vec<_> = self.section.authority_provider().peers().collect();
         let result = self.send_proposal_with(&recipients, proposal, &key_share);
 
         let public_key = key_share.public_key_set.public_key();
@@ -609,7 +606,7 @@ impl Core {
 
     // Send proposal to all our elders.
     fn propose(&self, proposal: Proposal) -> Result<Vec<Command>> {
-        let elders: Vec<_> = self.section.authority_provider().peers().copied().collect();
+        let elders: Vec<_> = self.section.authority_provider().peers().collect();
         self.send_proposal(&elders, proposal)
     }
 
@@ -1312,8 +1309,8 @@ impl Core {
         let bootstrap_addrs: Vec<_> = self
             .section
             .authority_provider()
-            .peers()
-            .map(Peer::addr)
+            .elders
+            .values()
             .copied()
             .collect();
 
@@ -1911,11 +1908,8 @@ impl Core {
             }
 
             // Send the `OurElder` proposal to all of the to-be-elders so it's aggregated by them.
-            let our_elders_recipients: Vec<_> = infos
-                .iter()
-                .flat_map(|info| info.peers())
-                .copied()
-                .collect();
+            let our_elders_recipients: Vec<_> =
+                infos.iter().flat_map(|info| info.peers()).collect();
             commands.extend(
                 self.send_proposal(&our_elders_recipients, Proposal::OurElders(section_auth))?,
             );
@@ -2277,7 +2271,7 @@ impl Core {
 
     fn send_dkg_start(&self, section_auth: SectionAuthorityProvider) -> Result<Vec<Command>> {
         // Send to all participants.
-        let recipients: Vec<_> = section_auth.elders.values().copied().collect();
+        let recipients: Vec<_> = section_auth.peers().collect();
         self.send_dkg_start_to(section_auth, &recipients)
     }
 
@@ -2446,15 +2440,8 @@ impl Core {
                 proof_chain,
             )?
         } else if itinerary.aggregate_at_src() {
-            let proof_chain =
-                self.create_proof_chain(&itinerary.dst, additional_proof_chain_key)?;
-            let proposal =
-                self.create_aggregate_at_src_proposal(itinerary.dst, variant, proof_chain);
-            let recipients = delivery_group::signature_targets(
-                &itinerary.dst,
-                self.section.authority_provider().peers().copied(),
-            );
-            return self.send_proposal(&recipients, proposal);
+            let proposal = self.create_aggregate_at_src_proposal(itinerary.dst, variant, None)?;
+            return self.propose(proposal);
         } else {
             Message::single_src(&self.node, itinerary.dst, variant, None)?
         };
@@ -2633,8 +2620,8 @@ impl Core {
         let targets: Vec<_> = self
             .section
             .authority_provider()
-            .peers()
-            .map(|peer| (*peer.addr(), *peer.name()))
+            .elders.iter()
+            .map(|(name, addr)| (*addr, *name))
             .collect();
 
         let dest_section_pk = *self.section_chain().last_key();
