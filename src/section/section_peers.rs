@@ -191,7 +191,6 @@ fn cmp_elder_candidates(
     // it comparing by the proof signatures because it's impossible for a node to predict its
     // signature and therefore game its chances of promotion.
     cmp_elder_candidates_by_peer_state(&lhs.value.state, &rhs.value.state)
-        .then_with(|| rhs.value.peer.age().cmp(&lhs.value.peer.age()))
         .then_with(|| {
             let lhs_is_elder = is_elder(&lhs.value, current_elders);
             let rhs_is_elder = is_elder(&rhs.value, current_elders);
@@ -202,6 +201,7 @@ fn cmp_elder_candidates(
                 _ => Ordering::Equal,
             }
         })
+        .then_with(|| rhs.value.peer.age().cmp(&lhs.value.peer.age()))
         .then_with(|| lhs.proof.signature.cmp(&rhs.proof.signature))
 }
 
