@@ -492,11 +492,9 @@ impl Core {
             let variant = Variant::ConnectivityComplaint(name);
             let recipients: Vec<_> = self
                 .section
-                .elders_info()
-                .elders
-                .values()
+                .authority_provider()
+                .peers()
                 .filter(|peer| *peer.name() != name)
-                .copied()
                 .collect();
             trace!(
                 "Casting connectivity complaint against {:?} {:?}",
@@ -2315,7 +2313,7 @@ impl Core {
         )?;
 
         let target_name = msg.dst().name().ok_or(Error::CannotRoute)?;
-        let dest_pk = self.section_key_by_name(&target_name).clone();
+        let dest_pk = *self.section_key_by_name(&target_name);
 
         let targets: Vec<_> = targets
             .into_iter()

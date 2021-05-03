@@ -155,7 +155,7 @@ mod tests {
         };
 
         let actions = process(&env.node, &env.section, &env.network, &msg, dest_info)?;
-        assert_eq!(actions.send, None);
+        assert!(actions.send.is_empty());
         assert_eq!(actions.propose, None);
 
         Ok(())
