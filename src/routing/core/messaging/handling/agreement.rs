@@ -72,6 +72,7 @@ impl Core {
                 Ok(vec![self.handle_accumulate_at_src_agreement(
                     *message,
                     proof_chain,
+                    self.section.authority_provider().section_key,
                     proof,
                     DestInfo {
                         dest: dest_name,
@@ -228,6 +229,7 @@ impl Core {
                         section: self.section.clone(),
                         network: self.network.clone(),
                     },
+                    self.section.authority_provider().section_key,
                     None,
                 )?;
                 let len = sync_recipients.len();
@@ -291,11 +293,12 @@ impl Core {
     fn handle_accumulate_at_src_agreement(
         &self,
         message: PlainMessage,
+        section_pk: bls::PublicKey,
         proof_chain: SecuredLinkedList,
         proof: Proof,
         dest_info: DestInfo,
     ) -> Result<Command> {
-        let message = RoutingMsg::section_src(message, proof, proof_chain)?;
+        let message = RoutingMsg::section_src(message, proof, section_pk, proof_chain)?;
 
         Ok(Command::HandleMessage {
             message,
