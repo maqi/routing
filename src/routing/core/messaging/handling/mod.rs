@@ -217,7 +217,6 @@ impl Core {
             DstLocation::DirectAndUnrouted,
             variant,
             self.section.authority_provider().section_key,
-            None,
         )?;
         Ok(self.send_message_to_our_elders(message))
     }
@@ -407,7 +406,6 @@ impl Core {
             dst_location,
             variant,
             self.section.authority_provider().section_key,
-            None,
         )?;
         let key = self.section_key_by_name(&src_name);
         Ok(Command::send_message_to_node(
@@ -468,7 +466,7 @@ impl Core {
             src: msg.src.src_location(),
             dst: *msg.dst(),
             proof: msg.proof(),
-            proof_chain: msg.proof_chain().ok().cloned(),
+            section_pk: msg.section_pk(),
         });
 
         Ok(vec![])
